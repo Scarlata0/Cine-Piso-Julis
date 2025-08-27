@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lista colaborativa - PISO JULIS CINE</title>
+  <style>
+    :root{
+      --bg:#0f172a; --panel:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#22d3ee; --ok:#10b981; --warn:#ef4444; --card:#0b1220; --shadow: 0 10px 25px rgba(0,0,0,.35); --radius:16px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#0a1324,#0b1220 40%);color:var(--text);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Arial}
+    .wrap{max-width:900px;margin:auto;padding:24px}
+    h1{font-size:clamp(24px,3vw,36px);margin:0 0 6px}
+    p.lead{color:var(--muted);margin:0 0 18px}
+    .card{background:linear-gradient(180deg,#0f172a,#0b1220); border:1px solid #1f2937; border-radius:var(--radius); box-shadow:var(--shadow); margin-bottom:16px}
+    .card .hd{padding:14px 16px;border-bottom:1px solid #1f2937;display:flex;align-items:center;justify-content:space-between}
+    .card .bd{padding:14px 16px}
+    label{display:block;font-weight:600;margin-bottom:6px}
+    input[type="text"], textarea{width:100%;padding:12px 14px;border-radius:12px;border:1px solid #283244;background:#0a1220;color:var(--text);outline:none}
+    textarea{min-height:90px;resize:vertical}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    button{appearance:none;border:0;border-radius:12px;padding:10px 14px;color:#041016;background:var(--accent);font-weight:700;cursor:pointer}
+    button.secondary{background:#1f2937;color:var(--text);border:1px solid #2b3652}
+    .list{display:grid;gap:12px}
+    .movie{background:linear-gradient(180deg,#0c1529,#0a1220);border:1px solid #1f2937;border-radius:14px;padding:12px}
+    .movie .top{display:flex;gap:10px;align-items:center;justify-content:space-between}
+    .muted{color:var(--muted)}
+    .sm{font-size:12px}
+    .divider{height:1px;background:#1f2937;margin:8px 0}
+    .kbd{font:12px ui-monospace,monospace;background:#0b162c;border:1px solid #1f2937;border-bottom-color:#0e1c3a;padding:0 6px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>📽️ Lista colaborativa - PISO JULIS CINE</h1>
+    <p class="lead">Sólo <strong>Nombre</strong>, <strong>Peli</strong> y <strong>Opinión</strong>. Se guarda en una <strong>Google Sheet</strong> desde GitHub Pages.</p>
+
+    <!-- Formulario mínimo -->
+    <section class="card" aria-labelledby="form-title">
+      <div class="hd"><h2 id="form-title">Añadir sugerencia</h2><span class="sm muted" id="status"></span></div>
+      <div class="bd">
+        <form id="form">
+          <label for="nombre">Tu nombre *</label>
+          <input id="nombre" name="nombre" type="text" required placeholder="Ej: Mario" />
+
+          <label for="pelicula" style="margin-top:10px">Película *</label>
+          <input id="pelicula" name="pelicula" type="text" required placeholder="Ej: Dune (2021)" />
+
+          <label for="opinion" style="margin-top:10px">Opinión (opcional)</label>
+          <textarea id="opinion" name="opinion" placeholder="Breve comentario…"></textarea>
+
+          <div class="actions">
+            <button type="submit">Añadir</button>
+            <button type="reset" class="secondary">Limpiar</button>
+          </div>
+        </form>
+        <p class="sm muted" style="margin-top:8px">Este sitio es estático (GitHub Pages). El envío se hace a un <em>Apps Script</em> público vía <span class="kbd">fetch</span> y la lista se lee por <span class="kbd">JSONP</span>.</p>
+      </div>
+    </section>
+
+    <!-- Lista -->
+    <section class="card" aria-labelledby="list-title">
+      <div class="hd"><h2 id="list-title">🎞️ Lista</h2><button id="refresh" class="secondary">Actualizar</button></div>
+      <div class="bd">
+        <div id="list" class="list" aria-live="polite"></div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // ========================= Configuración =========================
+    // Pega aquí tu URL de Web App (Apps Script desplegado como "Anyone")
+    const ENDPOINT = "https://script.google.com/macros/s/AKfycbx3G8x4RdFV2T5DAqfYAhRLS_R-IkjWmf6eiziTIZ0zm-c0xDyp4i5iHszL6iFu8ztMhw/exec"; // p.ej.: https://script.google.com/macros/s/AKfycbx.../exec
+
+    // ========================= Utilidades =========================
+    function uid(){ return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+    function esc(s){ return (s||"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+    function flash(msg, ok=true){ const st=document.getElementById('status'); st.textContent=msg; st.className = ok? 'sm' : 'sm'; setTimeout(()=>{ st.textContent=''; }, 2200); }
+
+    // ========================= Render lista =========================
+    function renderList(rows){
+      const root = document.getElementById('list');
+      if(!Array.isArray(rows) || !rows.length){ root.innerHTML = '<p class="muted">(Sin elementos todavía)</p>'; return; }
+      root.innerHTML = rows.map(r => {
+        const when = r.fecha ? new Date(r.fecha).toLocaleString() : '';
+        return (
+          '<article class="movie">'
+          + '<div class="top"><strong>' + esc(r.pelicula) + '</strong>'
+          + '<span class="sm muted">' + esc(when) + '</span></div>'
+          + '<div class="sm muted">propuesta por <strong>' + esc(r.nombre) + '</strong></div>'
+          + (r.opinion? '<div class="divider"></div><p>“' + esc(r.opinion) + '”</p>' : '')
+          + '</article>'
+        );
+      }).join('');
+    }
+
+    // ========================= Lectura (GET JSONP) =========================
+    function loadList(){
+      if(!ENDPOINT){ renderList([]); return; }
+      const cb = '__lb_' + uid();
+      const s = document.createElement('script');
+      window[cb] = (resp) => {
+        try {
+          if(resp && resp.ok && Array.isArray(resp.data)){
+            // Normaliza campos esperados
+            const rows = resp.data.map(x=>({
+              id: x.id || uid(),
+              fecha: x.fecha ? new Date(x.fecha).getTime() : Date.now(),
+              nombre: x.nombre || '',
+              pelicula: x.pelicula || '',
+              opinion: x.opinion || ''
+            }));
+            // Orden: más recientes primero
+            rows.sort((a,b)=> b.fecha - a.fecha);
+            renderList(rows);
+          } else {
+            renderList([]);
+          }
+        } finally { delete window[cb]; s.remove(); }
+      };
+      s.src = ENDPOINT + '?action=read&callback=' + cb;
+      s.onerror = () => { renderList([]); };
+      document.body.appendChild(s);
+    }
+
+    // ========================= Escritura (POST) =========================
+    async function submitRow(payload){
+      if(!ENDPOINT){ flash('Configura ENDPOINT (Apps Script) en el código', false); return; }
+      try{
+        // no-cors: el servidor debe aceptar la escritura; luego recargamos la lista
+        await fetch(ENDPOINT, {method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+        flash('Enviado ✅', true);
+        loadList();
+      }catch(err){
+        console.warn(err); flash('No se pudo enviar', false);
+      }
+    }
+
+    // ========================= Formulario =========================
+    const form = document.getElementById('form');
+    form.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      const nombre  = document.getElementById('nombre').value.trim();
+      const peli    = document.getElementById('pelicula').value.trim();
+      const opinion = document.getElementById('opinion').value.trim();
+      if(!nombre || !peli){ flash('Rellena nombre y película', false); return; }
+      const payload = { id: uid(), fecha: Date.now(), nombre, pelicula: peli, opinion };
+      submitRow(payload);
+      form.reset();
+    });
+
+    document.getElementById('refresh').addEventListener('click', loadList);
+
+    // ========================= Inicio =========================
+    loadList();
+  </script>
+
+  <!-- =============================================================
+       GUÍA RÁPIDA (Apps Script + Google Sheets)
+       1) Crea una hoja con pestaña "respuestas" y cabeceras:
+          id | fecha | nombre | pelicula | opinion
+       2) En script.google.com, pega y despliega como Web App (Anyone):
+
+       const SHEET_ID = 'TU_SHEET_ID';
+       const TAB_NAME = 'respuestas';
+       function doPost(e){
+         const d = JSON.parse(e.postData.contents);
+         SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB_NAME)
+           .appendRow([ d.id||'', new Date(d.fecha||Date.now()), d.nombre||'', d.pelicula||'', d.opinion||'' ]);
+         return ContentService.createTextOutput(JSON.stringify({ok:true}))
+           .setMimeType(ContentService.MimeType.JSON);
+       }
+       function doGet(e){
+         const sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB_NAME);
+         const values = sh.getDataRange().getDisplayValues();
+         const header = values.shift();
+         const rows = values.map(r=>({ id:r[0], fecha:r[1], nombre:r[2], pelicula:r[3], opinion:r[4] }));
+         const payload = JSON.stringify({ok:true, data:rows});
+         const cb = e && e.parameter && e.parameter.callback;
+         const out = cb ? `${cb}(${payload})` : payload;
+         return ContentService.createTextOutput(out)
+           .setMimeType(cb? ContentService.MimeType.JAVASCRIPT : ContentService.MimeType.JSON);
+       }
+
+       3) Copia la URL de la Web App y pégala en ENDPOINT arriba.
+     ============================================================= -->
+</body>
+</html>
